@@ -1,0 +1,36 @@
+# Para Esteban: servicios front y gateway del compose.yaml.
+# Los nombres dominio1, dominio2 e ia tienen que coincidir con los del nginx.conf.
+# cpus y mem_limit son PROVISORIOS: reemplazar con la medición de docker stats (cap. 7.2).
+
+services:
+  front:
+    image: ghcr.io/ealejandro23/front:ep2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    cpus: 0.25
+    mem_limit: 128m
+
+  gateway:
+    image: ghcr.io/franalarcon24/gateway:ep2
+    ports:
+      - "8080:8080"          # el ÚNICO puerto publicado de todo el sistema
+    depends_on:
+      front:
+        condition: service_healthy
+      dominio1:
+        condition: service_healthy
+      dominio2:
+        condition: service_healthy
+      ia:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    cpus: 0.25
+    mem_limit: 64m
