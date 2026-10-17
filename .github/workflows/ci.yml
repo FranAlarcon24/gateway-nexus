@@ -21,6 +21,8 @@ jobs:
     - name: Validar nginx.conf
       run: |
         docker run --rm \
+          --add-host front:127.0.0.1 --add-host dominio1:127.0.0.1 \
+          --add-host dominio2:127.0.0.1 --add-host ia:127.0.0.1 \
           -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" \
           nginx:1.27-alpine nginx -t
 
