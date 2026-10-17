@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: FranAlarcon24/gateway
+  IMAGE_NAME: fran-alarcon24/gateway
 
 jobs:
   test:
