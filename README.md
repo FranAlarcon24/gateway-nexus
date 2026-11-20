@@ -39,6 +39,15 @@ curl.exe -si -X POST -H "X-API-Key: $env:API_KEY" -H "Content-Type: application/
 - La IP real del cliente se toma de `X-Real-IP` (la pone Caddy), solo si la petición viene de la red interna de Docker.
 - Cuerpo mayor a 1 MB: `413 {"detail": "..."}` (Caddy ya corta en 2 MB; el gateway es la segunda barrera).
 
+## Tests automáticos
+
+`tests/test_gateway.sh` corre en el CI (job `test`) en cada PR: levanta la imagen con una clave de prueba y revisa:
+401 sin clave o con clave incorrecta, 429 al superar el límite, 413 con un cuerpo de 2 MB (test propio), 404 en JSON para rutas `/api/` inexistentes, que `/api/health` sea pública y que el gateway no arranque sin `API_KEY`. Si un test falla, no se publica la imagen.
+
+```bash
+docker build -t gateway-test . && bash tests/test_gateway.sh gateway-test
+```
+
 ## Health checks
 
 - **Pasivos (Nginx):** si una réplica no responde (error de conexión o timeout), queda fuera 10 s (`max_fails=1 fail_timeout=10s`) y la petición se reintenta en la otra (`proxy_next_upstream error timeout`). Un `503` que responde el propio dominio (por ejemplo, porque la IA está caída) no cuenta como falla de la réplica.
