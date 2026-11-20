@@ -33,6 +33,12 @@ curl.exe -si -X POST -H "X-API-Key: $env:API_KEY" -H "Content-Type: application/
   -d '{\"usuario_id\":\"U100000\",\"categoria\":\"audio\"}' https://<ip-con-guiones>.sslip.io/api/predict   # 200
 ```
 
+## Rate limiting (429) y tamaño máximo (413)
+
+- `/api/...`: máximo `RATE_LIMIT` peticiones por IP (por defecto `10r/s`) con una ráfaga de 20; sobre eso, `429 {"detail": "..."}` con `Retry-After`.
+- La IP real del cliente se toma de `X-Real-IP` (la pone Caddy), solo si la petición viene de la red interna de Docker.
+- Cuerpo mayor a 1 MB: `413 {"detail": "..."}` (Caddy ya corta en 2 MB; el gateway es la segunda barrera).
+
 ## Health checks
 
 - **Pasivos (Nginx):** si una réplica no responde (error de conexión o timeout), queda fuera 10 s (`max_fails=1 fail_timeout=10s`) y la petición se reintenta en la otra (`proxy_next_upstream error timeout`). Un `503` que responde el propio dominio (por ejemplo, porque la IA está caída) no cuenta como falla de la réplica.
