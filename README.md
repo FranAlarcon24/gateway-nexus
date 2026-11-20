@@ -1,15 +1,20 @@
 # nexo-gateway
 
-API gateway de Nexo (Caso 1 · Nexus Retail). Nginx es el único servicio que publica puerto (8080).
+API gateway de Nexo (Caso 1 · Nexus Retail). En EP3 queda detrás de Caddy (`edge`, puertos 80/443) y escucha en `8080` solo dentro de la red de Docker.
 
-- Imagen: `ghcr.io/franalarcon24/gateway:ep2`
+- Imagen: `ghcr.io/franalarcon24/gateway:ep3`
 
 ## Rutas
 
 | Ruta pública | Destino interno |
 |---|---|
+| `GET /api/health` | `campanas:8090/api/health` |
+| `POST /api/predict` | `dominio:8000` o `dominio2:8000` → `POST /predicciones` |
+| `GET /api/predicciones/{id}` | `campanas:8090/api/campanas/jobs/{id}` |
+| `POST /api/campanas/{usuario}` | `campanas:8090/api/campanas/{usuario}` |
+| `GET /docs` | `campanas:8090/docs` (OpenAPI) |
 | `/` | `front:8000` |
-| `/api/dominio/...` | `dominio1:8000` o `dominio2:8000`, round-robin |
+| `/api/dominio/...` | `dominio:8000` o `dominio2:8000`, round-robin |
 | `/api/ia/...` | `ia:8000` |
 | `/health` | el propio gateway |
 
@@ -29,13 +34,13 @@ El prefijo se quita al reenviar: `/api/ia/predict` llega a la IA como `/predict`
 curl.exe -si http://localhost:8080/api/dominio/health
 
 # Detener una réplica y seguir usando el front
-docker stop equipoNN-dominio1-1
-docker start equipoNN-dominio1-1
+docker stop equipo02-dominio-1
+docker start equipo02-dominio-1
 
 # Detener la IA y ver qué responde el gateway
-docker stop equipoNN-ia-1
+docker stop equipo02-ia
 curl.exe -si http://localhost:8080/api/ia/health
 
 # Latencia por petición (tiempo=...)
-docker compose -p equipoNN logs gateway --tail 20
+docker compose -p equipo02 logs gateway --tail 20
 ```
