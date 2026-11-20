@@ -16,11 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Validar nginx.conf
+    - name: Construir imagen
+      run: docker build -t gateway-test .
+    - name: Validar nginx.conf (con una clave de prueba, no la real)
+      run: docker run --rm -e API_KEY=clave-de-prueba-ci-123456 gateway-test nginx -t
+    - name: Sin API_KEY el gateway no debe arrancar
       run: |
-        docker run --rm \
-          -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" \
-          nginx:1.27-alpine nginx -t
+        if docker run --rm gateway-test nginx -t; then
+          echo "ERROR: el gateway arranco sin API_KEY"; exit 1
+        fi
 
   build-and-push:
     needs: test
