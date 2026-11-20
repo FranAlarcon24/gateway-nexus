@@ -20,6 +20,19 @@ API gateway de Nexo (Caso 1 · Nexus Retail). En EP3 queda detrás de Caddy (`ed
 
 El prefijo se quita al reenviar: `/api/ia/predict` llega a la IA como `/predict`.
 
+## Autenticación (X-API-Key)
+
+- Todo `/api/...` exige la cabecera `X-API-Key`, salvo `GET /api/health`. `/docs` y el front son públicos.
+- Sin clave o con clave incorrecta: `401 {"detail": "..."}`, sin llegar a ningún servicio.
+- La clave se lee de `API_KEY` (archivo `.env` del servidor, ver `.env.example`). Al arrancar, `docker/05-nexo-seguridad.sh` genera `/etc/nginx/nexo/api_key.conf`. Si falta `API_KEY` o tiene menos de 16 caracteres, el gateway no arranca.
+- La clave no está en el repositorio ni en la imagen, y no se reenvía a los servicios internos.
+
+```powershell
+curl.exe -si -X POST https://<ip-con-guiones>.sslip.io/api/predict                             # 401
+curl.exe -si -X POST -H "X-API-Key: $env:API_KEY" -H "Content-Type: application/json" `
+  -d '{\"usuario_id\":\"U100000\",\"categoria\":\"audio\"}' https://<ip-con-guiones>.sslip.io/api/predict   # 200
+```
+
 ## Health checks
 
 - **Pasivos (Nginx):** si una réplica no responde (error de conexión o timeout), queda fuera 10 s (`max_fails=1 fail_timeout=10s`) y la petición se reintenta en la otra (`proxy_next_upstream error timeout`). Un `503` que responde el propio dominio (por ejemplo, porque la IA está caída) no cuenta como falla de la réplica.
