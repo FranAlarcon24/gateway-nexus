@@ -25,6 +25,8 @@ jobs:
         if docker run --rm gateway-test nginx -t; then
           echo "ERROR: el gateway arranco sin API_KEY"; exit 1
         fi
+    - name: Tests 401 / 429 / 413
+      run: bash tests/test_gateway.sh gateway-test
 
   build-and-push:
     needs: test
