@@ -5,9 +5,7 @@ on:
     branches: [dev, main]
   push:
     branches: [main]
-  create:
-    tags:
-      - 'ep2'
+    tags: ['ep3']
 
 env:
   REGISTRY: ghcr.io
@@ -18,16 +16,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Validar nginx.conf
+    - name: Construir imagen
+      run: docker build -t gateway-test .
+    - name: Validar nginx.conf (con una clave de prueba, no la real)
+      run: docker run --rm -e API_KEY=clave-de-prueba-ci-123456 gateway-test nginx -t
+    - name: Sin API_KEY el gateway no debe arrancar
       run: |
-        docker run --rm \
-          -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" \
-          nginx:1.27-alpine nginx -t 2>&1 || echo "Warning: nginx test failed, continuing..."
+        if docker run --rm gateway-test nginx -t; then
+          echo "ERROR: el gateway arranco sin API_KEY"; exit 1
+        fi
+    - name: Tests 401 / 429 / 413
+      run: bash tests/test_gateway.sh gateway-test
 
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/ep2')
+    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -48,7 +52,8 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=sha,prefix=sha-
-          type=raw,value=latest
+          type=ref,event=tag
+          type=raw,value=latest,enable={{is_default_branch}}
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
@@ -60,25 +65,3 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  tag-ep2:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/ep2')
-    permissions:
-      contents: read
-      packages: write
-    steps:
-    - uses: actions/checkout@v4
-    - name: Log in to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Pull latest image
-      run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-    - name: Tag as ep2
-      run: |
-        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ep2
-    - name: Push ep2 tag
-      run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ep2
