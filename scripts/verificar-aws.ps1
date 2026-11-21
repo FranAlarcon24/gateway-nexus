@@ -92,9 +92,12 @@ if ($job) {
     }
 }
 
-Write-Host "`n== Rate limiting (429): 40 peticiones seguidas" -ForegroundColor Cyan
-$codigos = 1..40 | ForEach-Object { & curl.exe -s -o NUL -w "%{http_code}" -H "X-API-Key: $clave" "$Url/api/predicciones/x" }
-$n429 = ($codigos | Where-Object { $_ -eq "429" }).Count
+Write-Host "`n== Rate limiting (429): 40 peticiones en paralelo" -ForegroundColor Cyan
+# En paralelo: una por una, la latencia hasta AWS deja el ritmo bajo el límite y nunca se llega al 429.
+$argumentos = @("-s", "--parallel", "--parallel-immediate", "--parallel-max", "40", "-w", "%{http_code}`n", "-H", "X-API-Key: $clave")
+1..40 | ForEach-Object { $argumentos += @("-o", "NUL", "$Url/api/predicciones/x") }
+$codigos = (& curl.exe @argumentos) -split "`n" | Where-Object { $_ }
+$n429 = ($codigos | Where-Object { $_.Trim() -eq "429" }).Count
 if ($n429 -gt 0) { $script:ok++; Write-Host "OK    $n429 de 40 peticiones recibieron 429" -ForegroundColor Green }
 else { $script:fallas++; Write-Host "FALLA ninguna petición recibió 429" -ForegroundColor Red }
 
