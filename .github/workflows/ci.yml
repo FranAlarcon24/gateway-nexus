@@ -27,6 +27,8 @@ jobs:
         fi
     - name: Tests 401 / 429 / 413
       run: bash tests/test_gateway.sh gateway-test
+    - name: Test de rutas (cada ruta llega a su servicio, sin la clave)
+      run: bash tests/test_rutas.sh gateway-test
 
   build-and-push:
     needs: test
