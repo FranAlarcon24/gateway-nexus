@@ -78,18 +78,47 @@ Internet ──443──► edge (Caddy, TLS) ──► gateway (Nginx :8080) �
 - **Escenario:** `POST /api/predict` contra AWS, con usuarios y categorías reales y 20 usuarios virtuales durante 3 minutos. **No apunta al LLM.**
 - **Script:** `carga/locustfile.py`; la tabla se genera con `carga/resumen.py`.
 
-| Métrica | Con límite (10 r/s) | Capacidad (`RATE_LIMIT=200r/s`) |
-|---|---|---|
-| Peticiones totales | _completar_ | _completar_ |
-| Req/s promedio | _completar_ | _completar_ |
-| p50 | _completar_ ms | _completar_ ms |
-| p95 | _completar_ ms | _completar_ ms |
-| p99 | _completar_ ms | _completar_ ms |
-| Errores | _completar_ (429 esperados) | _completar_ |
+Ejecución del 21/11/2026 contra `https://3-215-113-161.sslip.io` (EC2 t3.medium), con 20 usuarios virtuales y 3 minutos (`RATE_LIMIT=10r/s`). El informe completo está en [evidencias/locust-ep3.html](evidencias/locust-ep3.html).
 
-**Lectura:** con el límite activo, los `429` demuestran que el rate limiting protege el sistema ante un solo cliente. Al subir el límite se mide la capacidad real del recomendador (dominio → IA → PostgreSQL) en una t3.medium.
+| Métrica | Resultado |
+|---|---|
+| Peticiones totales | 658 |
+| Req/s promedio | 3,74 |
+| p50 | 4.200 ms |
+| p95 | 5.300 ms |
+| p99 | 5.700 ms |
+| Errores | 0 (0,00 %) |
 
-## 7. Limitaciones conocidas
+**Lectura**
+
+- **Estabilidad:** 0 errores en 3 minutos de carga continua. Ninguna petición falló ni respondió `500`.
+- **El límite de 10 r/s no se alcanzó:** el sistema entregó 3,74 r/s, porque el cuello de botella está antes, así que no aparecieron `429`. Que el rate limiting funciona se demuestra aparte, con 40 peticiones en paralelo: 17 recibieron `429` (ver [evidencias/verificacion-aws.txt](evidencias/verificacion-aws.txt)).
+- **Dónde se va el tiempo** (`docker stats` durante la carga):
+
+  | Componente | CPU | Lectura |
+  |---|---|---|
+  | edge + gateway | < 0,5 % | El gateway mide el mismo tiempo que el servicio de atrás (`tiempo` = `upstream_tiempo` en su log): no agrega latencia |
+  | ia | 1,6 % | Cada predicción del modelo tarda ~5 ms |
+  | dominio ×2 | 9–12 % | Espera a la base de datos |
+  | **db (PostgreSQL)** | **26,8 %**, en su límite de 0,25 CPU | **Cuello de botella** |
+
+- **Causa:** cada `POST /predicciones` del dominio ejecuta 6 consultas y abre una conexión nueva a PostgreSQL por consulta, sin pool. Además, `transacciones` no tiene índice por `usuario_id`, así que cada consulta recorre las 19.011 filas. Una consulta sola tarda ~3 ms, pero con 20 usuarios simultáneos y la base de datos limitada a 0,25 CPU, las peticiones hacen fila.
+- **Mejoras propuestas** (en el dominio y el compose): un índice `transacciones(usuario_id)`, un pool de conexiones en el dominio y subir el límite de CPU de `db`. Con esas tres, el límite de 10 r/s del gateway pasaría a ser el techo esperado.
+
+## 7. Verificación en AWS
+
+El script `scripts/verificar-aws.ps1` se ejecutó contra el sistema desplegado: **15 de 15 pruebas OK**. La salida completa está en [evidencias/verificacion-aws.txt](evidencias/verificacion-aws.txt).
+
+- `/health`, `/api/health`, `/`, `/docs` y `/dashboard` → 200. HTTP redirige a HTTPS con 308, y el certificado lo emite Caddy.
+- Sin clave o con clave inválida, en `/api/predict`, `/api/campanas/{usuario}` y `/api/predicciones/{id}` → 401 `{"detail": ...}`.
+- `POST /api/predict` con clave → 200. Con `{}` → 422.
+- `X-Upstream` alterna entre las 2 réplicas del dominio (round-robin).
+- Cuerpo de 1,5 MB → 413. 40 peticiones en paralelo → 17 con 429.
+- `POST /api/campanas/{usuario}` → 202 con `job_id`. `GET /api/predicciones/{job_id}` → 200. En la prueba, NVIDIA rechazó la clave (403) y el worker entregó el mensaje genérico marcado `degradado: true`: el modo degradado funcionando de punta a punta.
+
+**Error encontrado y corregido durante la verificación:** `GET /api/predicciones/{id}` llegaba a `campanas` sin el id. En nginx, los `map` con expresión regular que se evalúan después (rate limiting) sobrescriben `$1`. Se cambió a `rewrite ... break` y se agregó `tests/test_rutas.sh` al CI: levanta servicios falsos con los nombres del compose y comprueba que las 7 rutas lleguen a su servicio y ruta interna sin la cabecera `X-API-Key`.
+
+## 8. Limitaciones conocidas
 
 - Los contadores del dashboard viven en memoria del front y se reinician si se reinicia el contenedor.
 - El rate limiting es por IP. Varios usuarios detrás de una misma red (NAT) comparten el cupo.
