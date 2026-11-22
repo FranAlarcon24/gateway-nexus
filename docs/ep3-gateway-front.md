@@ -93,32 +93,24 @@ Internet ──443──► edge (Caddy, TLS) ──► gateway (Nginx :8080) �
 - **Escenario:** `POST /api/predict` contra AWS, con usuarios y categorías reales y 20 usuarios virtuales durante 3 minutos. **No apunta al LLM.**
 - **Script:** `carga/locustfile.py`; la tabla se genera con `carga/resumen.py`.
 
-Ejecución del 21/11/2026 contra `https://3-215-113-161.sslip.io` (EC2 t3.medium), con 20 usuarios virtuales y 3 minutos (`RATE_LIMIT=10r/s`). El informe completo está en [evidencias/locust-ep3.html](evidencias/locust-ep3.html).
+Cuatro mediciones con el mismo escenario (`POST /api/predict`, 20 usuarios virtuales, 3 minutos, desde Chile contra `https://3-215-113-161.sslip.io`). Para medir capacidad se subió temporalmente `RATE_LIMIT=200r/s` y después se volvió a `10r/s`. El informe final está en [evidencias/locust-ep3-final.html](evidencias/locust-ep3-final.html).
 
-| Métrica | Resultado |
-|---|---|
-| Peticiones totales | 658 |
-| Req/s promedio | 3,74 |
-| p50 | 4.200 ms |
-| p95 | 5.300 ms |
-| p99 | 5.700 ms |
-| Errores | 0 (0,00 %) |
+| Medición | Peticiones | req/s | p50 | p95 | p99 | Errores |
+|---|---|---|---|---|---|---|
+| 1. Inicial (modelo local, sin índices; 21/11) | 658 | 3,7 | 4.200 ms | 5.300 ms | 5.700 ms | 0 % |
+| 2. SageMaker + índices | 1.088 | 6,1 | 2.200 ms | 2.800 ms | 3.600 ms | 0,09 % |
+| 3. + PostgreSQL a 1 CPU | 2.134 | 12,0 | 590 ms | 1.200 ms | 1.800 ms | 0 % |
+| **4. + pool de conexiones + dominio a 0,5 CPU (22/11)** | **2.775** | **15,6** | **210 ms** | **380 ms** | **1.100 ms** | **0,11 %** (3 × 504) |
 
-**Lectura**
+**Cómo se encontró cada cuello de botella:** `docker stats` durante la carga y los tiempos del log del gateway (`upstream_tiempo`).
 
-- **Estabilidad:** 0 errores en 3 minutos de carga continua. Ninguna petición falló ni respondió `500`.
-- **El límite de 10 r/s no se alcanzó:** el sistema entregó 3,74 r/s, porque el cuello de botella está antes, así que no aparecieron `429`. Que el rate limiting funciona se demuestra aparte, con 40 peticiones en paralelo: 17 recibieron `429` (ver [evidencias/verificacion-aws.txt](evidencias/verificacion-aws.txt)).
-- **Dónde se va el tiempo** (`docker stats` durante la carga):
+| # | Optimización | Qué mejoró (medido) | Costo |
+|---|---|---|---|
+| 1 | Índices en `transacciones(usuario_id, pedido_id, sku)` y `clickstream(usuario_id)` | p50 4,2 s → 2,2 s | USD 0 |
+| 2 | PostgreSQL de 0,25 a 1 CPU (estaba en su límite, 26,8 %) | p50 2,2 s → 590 ms; req/s ×2 | USD 0 (capacidad ociosa de la t3.medium) |
+| 3 | Pool de conexiones en el dominio (antes abría 3 conexiones por predicción) + dominio a 0,5 CPU | p50 590 → 210 ms; req/s ×1,3 | USD 0 |
 
-  | Componente | CPU | Lectura |
-  |---|---|---|
-  | edge + gateway | < 0,5 % | El gateway mide el mismo tiempo que el servicio de atrás (`tiempo` = `upstream_tiempo` en su log): no agrega latencia |
-  | ia | 1,6 % | Cada predicción del modelo tarda ~5 ms |
-  | dominio ×2 | 9–12 % | Espera a la base de datos |
-  | **db (PostgreSQL)** | **26,8 %**, en su límite de 0,25 CPU | **Cuello de botella** |
-
-- **Causa:** cada `POST /predicciones` del dominio ejecuta 6 consultas y abre una conexión nueva a PostgreSQL por consulta, sin pool. Además, `transacciones` no tiene índice por `usuario_id`, así que cada consulta recorre las 19.011 filas. Una consulta sola tarda ~3 ms, pero con 20 usuarios simultáneos y la base de datos limitada a 0,25 CPU, las peticiones hacen fila.
-- **Mejoras propuestas** (en el dominio y el compose): un índice `transacciones(usuario_id)`, un pool de conexiones en el dominio y subir el límite de CPU de `db`. Con esas tres, el límite de 10 r/s del gateway pasaría a ser el techo esperado.
+**RNF1 (p95 < 200 ms):** no se cumple aún: el p95 es de 380 ms medido desde Chile, y ~150 ms de eso corresponden a la red Chile–us-east-1. Próximo paso: precalcular las propensiones de noche (la consulta en línea pasaría a ser una lectura) o desplegar en `sa-east-1`. El rate limiting se demuestra aparte, con 40 peticiones en paralelo: 15 a 17 reciben `429`.
 
 ## 7. Verificación en AWS
 
