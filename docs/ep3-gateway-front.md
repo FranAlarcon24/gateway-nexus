@@ -17,6 +17,16 @@ Internet ──443──► edge (Caddy, TLS) ──► gateway (Nginx :8080) �
 
 - `POST /api/predict` invoca el endpoint **serverless de SageMaker** `nexo-recomendacion` (XGBoost integrado 1.7-1, 2048 MB, concurrencia 10). Si no responde en `TIMEOUT_MODELO_MS` (200 ms), por ejemplo por un cold start o por throttling, el dominio usa la **reserva** (el modelo local del servicio `ia`). La respuesta indica `origen` (`sagemaker` o `reserva`), `latencia_ms` y `motivo_reserva`.
 - Medido en AWS: con el endpoint frío, la petición salió por `reserva` (`ReadTimeoutError` a los 200 ms) mientras SageMaker encendía el contenedor. Ya en caliente, `origen: sagemaker` con **~40 ms**. La primera petición de cada réplica tarda ~1 s, porque abre la conexión TLS y obtiene las credenciales de `LabInstanceProfile`.
+- **Cold start medido** (21/11/2026, 22:28, después de 11 minutos sin uso):
+
+  | Petición | Origen | Latencia en el dominio | Lectura |
+  |---|---|---|---|
+  | 1.ª | `reserva` | 66 ms | SageMaker enciende el contenedor; el dominio corta a los 200 ms (`ReadTimeoutError`) y responde con el modelo local |
+  | 2.ª (10 s después) | `sagemaker` | 148 ms | Contenedor recién arrancado |
+  | 3.ª | `sagemaker` | 124 ms | |
+  | 4.ª a 6.ª | `sagemaker` | 42–48 ms | En caliente |
+
+  El cliente nunca recibe un error: durante el cold start responde la reserva. Antes de la demo conviene hacer una predicción y esperar unos 10 s.
 - El endpoint se crea con `sagemaker/desplegar.py` (en Backend-Nexus, adaptado de la guía del curso) desde CloudShell. El cold start se mide con `sagemaker/probar.py`.
 
 - Solo Caddy publica puertos (80 y 443). El gateway escucha en la red interna de Docker.
