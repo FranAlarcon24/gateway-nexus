@@ -71,6 +71,10 @@ Internet ──443──► edge (Caddy, TLS) ──► gateway (Nginx :8080) �
 | Modo degradado | Si la campaña no se encola, no llega a tiempo o el worker la marca como `degradado`: aviso visible, y las recomendaciones siguen funcionando |
 | Seguridad | La clave `X-API-Key` nunca llega al navegador (hay un test que lo comprueba) |
 
+**Consentimiento (RN2):** solo se personaliza a quien tiene `acepta_marketing = 1` (2.077 de 4.000 clientes). Para el resto, el dominio responde los más vendidos con `origen: "regla"` y el front muestra el motivo ("El cliente no dio consentimiento para usar su historial"). Cuenta como respuesta con lista de reserva en el dashboard.
+
+**Observabilidad:** los servicios de la aplicación envían sus logs a CloudWatch Logs (`/ity1102/proyecto`, driver `awslogs` con el rol de la EC2). Cada predicción deja un log `{"evento": "prediccion", "id": ..., "origen": ..., "latencia_ms": ...}`, buscable por `id`. El dashboard `proyecto-ep3` muestra `Invocations`, `ModelLatency`, `ModelSetupTime`, errores 4XX/5XX, la CPU de la EC2 y las últimas predicciones; hay alarmas para 5XX del endpoint y para CPU > 80 %. `/api/health` informa base de datos, cola, LLM y el estado del endpoint de SageMaker.
+
 **Dashboard:** recomendaciones entregadas, cuántas usaron la lista de reserva y su **proporción**, mensajes del LLM entregados y respuestas en modo degradado. Son contadores en memoria desde el último reinicio del front.
 
 ## 5. Tests automáticos y CI/CD
@@ -129,5 +133,5 @@ El script `scripts/verificar-aws.ps1` se ejecutó contra el sistema desplegado: 
 
 - Los contadores del dashboard viven en memoria del front y se reinician si se reinicia el contenedor.
 - El rate limiting es por IP. Varios usuarios detrás de una misma red (NAT) comparten el cupo.
-- `/api/health` (servicio de campañas) muestra `sagemaker: no_configurado`. El endpoint lo usa el **dominio** (`ENDPOINT_MODELO`). Campañas lo invocaría con JSON y el XGBoost integrado espera CSV, así que su `SAGEMAKER_ENDPOINT_NAME` queda vacío y usa las predicciones de PostgreSQL.
+- El servicio de campañas no invoca el endpoint (lo hace el dominio): su `SAGEMAKER_ENDPOINT_NAME` queda vacío y toma las propensiones guardadas en PostgreSQL; `/api/health` igual informa el estado del endpoint vía `ENDPOINT_MODELO`.
 - **Fuga de etiqueta (corregida el 22/11/2026):** en `datos/preparar.py`, la etiqueta es `propension_compra = num_compras_categoria > 0`. Entrenar con `num_compras_categoria`, `total_gastado_categoria` o `dias_ultima_compra` (que salen de esas mismas compras) daba ROC-AUC 1,000, un modelo "perfecto" que no aprendía nada. El modelo del endpoint ahora usa 6 variables: vistas y clics en la categoría (el dominio las calcula desde el clickstream), frecuencia de compra, ticket promedio, edad y acepta_marketing. Validación en SageMaker: **PR-AUC 0,967** (train 0,975), contra 0,798 del azar (la proporción de positivos). Fuera de la línea, con un clasificador equivalente: ROC-AUC 0,915.
