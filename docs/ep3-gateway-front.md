@@ -10,9 +10,14 @@
 
 ```
 Internet ──443──► edge (Caddy, TLS) ──► gateway (Nginx :8080) ──► front :8000
-                     │ 80 → 308 HTTPS          │  401 · 429 · 413   ├──► dominio / dominio2 :8000 ──► ia :8000
-                     │ cuerpo > 2 MB → 413     │                    └──► campanas :8090 ──► RabbitMQ ──► worker ──► NVIDIA
+                     │ 80 → 308 HTTPS          │  401 · 429 · 413   ├──► dominio / dominio2 :8000 ──► SageMaker serverless (200 ms)
+                     │ cuerpo > 2 MB → 413     │                    │                               └─ reserva: ia :8000 (modelo local)
+                     │                         │                    └──► campanas :8090 ──► RabbitMQ ──► worker ──► NVIDIA
 ```
+
+- `POST /api/predict` invoca el endpoint **serverless de SageMaker** `nexo-recomendacion` (XGBoost integrado 1.7-1, 2048 MB, concurrencia 10). Si no responde en `TIMEOUT_MODELO_MS` (200 ms), por ejemplo por un cold start o por throttling, el dominio usa la **reserva** (el modelo local del servicio `ia`). La respuesta indica `origen` (`sagemaker` o `reserva`), `latencia_ms` y `motivo_reserva`.
+- Medido en AWS: con el endpoint frío, la petición salió por `reserva` (`ReadTimeoutError` a los 200 ms) mientras SageMaker encendía el contenedor. Ya en caliente, `origen: sagemaker` con **~40 ms**. La primera petición de cada réplica tarda ~1 s, porque abre la conexión TLS y obtiene las credenciales de `LabInstanceProfile`.
+- El endpoint se crea con `sagemaker/desplegar.py` (en Backend-Nexus, adaptado de la guía del curso) desde CloudShell. El cold start se mide con `sagemaker/probar.py`.
 
 - Solo Caddy publica puertos (80 y 443). El gateway escucha en la red interna de Docker.
 - Toda la API pasa por el gateway, excepto `GET /api/health`, que es pública y Caddy la envía directo a `campanas`.
@@ -122,4 +127,5 @@ El script `scripts/verificar-aws.ps1` se ejecutó contra el sistema desplegado: 
 
 - Los contadores del dashboard viven en memoria del front y se reinician si se reinicia el contenedor.
 - El rate limiting es por IP. Varios usuarios detrás de una misma red (NAT) comparten el cupo.
-- SageMaker: si `SAGEMAKER_ENDPOINT_NAME` no está configurado, el servicio de campañas usa las predicciones guardadas en PostgreSQL y `/api/health` lo informa como `no_configurado`.
+- `/api/health` (servicio de campañas) muestra `sagemaker: no_configurado`. El endpoint lo usa el **dominio** (`ENDPOINT_MODELO`). Campañas lo invocaría con JSON y el XGBoost integrado espera CSV, así que su `SAGEMAKER_ENDPOINT_NAME` queda vacío y usa las predicciones de PostgreSQL.
+- **Fuga de etiqueta en los datos:** en `datos/preparar.py`, `propension_compra = num_compras_categoria > 0`, y `num_compras_categoria` es también una variable de entrada. Por eso el modelo predice casi perfecto (por ejemplo, 0,994 para quien ya compró en la categoría) y no aporta información nueva. Lo correcto es predecir una compra **futura** con variables del pasado (separar por fecha).
