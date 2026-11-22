@@ -1,7 +1,7 @@
 
 == Sistema en https://3-215-113-161.sslip.io
 OK    GET /health (gateway)                            200  {"status":"ok","servicio":"gateway"}
-OK    GET /api/health (pública)                        200  {"estado":"ok","checks":{"base_datos":{"estado":"ok","detalle":"PostgreSQL responde","latencia_ms":2.38},"sagemaker":{"estado":"no_configura...
+OK    GET /api/health (pública)                        200  {"estado":"ok","checks":{"base_datos":{"estado":"ok","detalle":"PostgreSQL responde","latencia_ms":66.96},"sagemaker":{"estado":"no_configur...
 OK    GET / (front)                                    200  <!doctype html> <html lang="es"><head><meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>Nex...
 OK    GET /docs (OpenAPI, pública)                     200   <!DOCTYPE html> <html> <head> <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"> ...
 OK    GET /dashboard (front)                           200  <!doctype html> <html lang="es"><head><meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>Nex...
@@ -14,25 +14,25 @@ OK    GET /api/predicciones/x sin clave                401  {"detail":"Falta la 
 
 == Predicción con el modelo propio
 Usuario de prueba: U100000
-OK    POST /api/predict con clave                      200  {"probabilidad_compra":0.75,"prediccion":1,"version_modelo":"1.0.0","prediccion_id":830,"instancia":null}
+OK    POST /api/predict con clave                      200  {"probabilidad_compra":0.9942429661750793,"prediccion":1,"version_modelo":"sagemaker-xgboost","prediccion_id":856,"origen":"sagemaker","late...
 OK    POST /api/predict entrada inválida -> 422        422  {"detail":"usuario_id y categoria son requeridos"}
 
 == Réplicas del dominio (X-Upstream)
-  X-Upstream: 172.18.0.2:8000
-  X-Upstream: 172.18.0.3:8000
-  X-Upstream: 172.18.0.2:8000
-  X-Upstream: 172.18.0.3:8000
+  X-Upstream: 172.18.0.4:8000
+  X-Upstream: 172.18.0.8:8000
+  X-Upstream: 172.18.0.4:8000
+  X-Upstream: 172.18.0.8:8000
 
 == Tamaño máximo (413)
 OK    POST /api/predict con 1,5 MB                     413  {"detail":"El cuerpo de la petición supera el máximo permitido (1 MB)."}
 
 == Campaña con el LLM (worker + RabbitMQ)
-OK    POST /api/campanas/{usuario} con clave           202  {"job_id":"927b99ef-5d87-4a86-b30c-ac9c82efe0df","usuario_id":"U100000","estado":"en_cola","mensaje":"Campaña encolada. Consulta GET /api/ca...
-OK    GET /api/predicciones/{job_id} (MODO DEGRADADO)  200  {"job_id":"927b99ef-5d87-4a86-b30c-ac9c82efe0df","usuario_id":"U100000","canal":"email","asunto":"Una selección de Audio, componentes para t...
+OK    POST /api/campanas/{usuario} con clave           202  {"job_id":"f42c73d8-73cb-45b1-829c-55c7128e530d","usuario_id":"U100000","estado":"en_cola","mensaje":"Campaña encolada. Consulta GET /api/ca...
+OK    GET /api/predicciones/{job_id} (MODO DEGRADADO)  200  {"job_id":"f42c73d8-73cb-45b1-829c-55c7128e530d","usuario_id":"U100000","canal":"email","asunto":"Una selección de Audio, componentes para t...
   Asunto: Una selección de Audio, componentes para ti
   Mensaje: Preparamos una selección especial de Audio, componentes pensando en lo que has explorado en Nexo. Revisa las novedades y encuentra tu próxima compra favorita. Este mensaje se generó automáticamente porque el servicio de redacción no estaba disponible.
 
 == Rate limiting (429): 40 peticiones en paralelo
-OK    17 de 40 peticiones recibieron 429
+OK    15 de 40 peticiones recibieron 429
 
 Resultado: 15 OK, 0 fallas
